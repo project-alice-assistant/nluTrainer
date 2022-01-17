@@ -28,7 +28,7 @@ setup(
 	version='0.0.1',
 	long_description=Path('README.md').read_text(encoding='utf8'),
 	long_description_content_type='text/markdown',
-	python_requires='>=3.8',
+	python_requires='==3.7',
 	packages=find_packages(),
 	include_package_data=True,
 	url='https://github.com/project-alice-assistant/nluTrainer',
@@ -40,19 +40,24 @@ setup(
 	install_requires=[
 		'paho-mqtt~=1.6.1',
 		'toml~=0.10.2',
+		'snips-nlu==0.20.2',
 		'pytest~=6.2.5',
 		'coverage~=6.2',
 		'pytest-cov~=3.0.0',
 		'coveralls~=3.3.1'
     ],
 	classifiers=[
-		"Development Status :: 1 - Planning",
+		"Development Status :: 3 - Alpha",
 		"Environment :: Console",
 		"Intended Audience :: End Users/Desktop",
 		"License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 		"Operating System :: OS Independent",
-		"Programming Language :: Python :: 3.8",
+		"Programming Language :: Python :: 3.7",
 		"Topic :: Home Automation",
 		"Topic :: System :: Installation/Setup"
-	]
+	],
+	entry_points='''
+        [console_scripts]
+        alice-trainer=AliceNluTrainer.main:start
+    '''
 )

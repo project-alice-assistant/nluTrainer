@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from subprocess import CompletedProcess
 from threading import Thread
-from typing import Optional
+from typing import Dict, Optional
 
 import paho.mqtt.client as mqtt
 
@@ -35,10 +35,11 @@ class NLUTrainer(object):
 	TOPIC_STOPPED = 'projectalice/nlu/trainerStopped'
 
 	TOPIC_TRAIN = 'projectalice/nlu/doTrain'
-	TOPIC_REFUSE_TRAINING = 'projectalice/nlu/trainingRefused'
-	TOPIC_TRAINING_RESULT = 'projectalice/nlu/trainingResult'
+	TOPIC_REFUSE_FAILED = 'projectalice/nlu/trainingFailed'
+	TOPIC_TRAINING_RESULT = 'projectalice/nlu/trainingResult/{}'
 
 	DATASET_FILE = Path('snipsNluDataset.json')
+	DEBUG_DATA_FILE = Path('debugDataset.json')
 
 	def __init__(self):
 		self._mqttClient = mqtt.Client()
@@ -63,29 +64,40 @@ class NLUTrainer(object):
 	def onMqttMessage(self, _client, _userdata, message: mqtt.MQTTMessage):
 		if message.topic == self.TOPIC_TRAIN:
 			try:
-				payload = json.loads(message.payload)
-				data = payload.get('data', None)
+				print('Received training task')
+
+				if not message.payload:
+					raise Exception('No payload in message')
+
+				payload = json.loads(message.payload.decode())
+				data = json.loads(payload.get('data', '{}'))
 				language = payload.get('language', None)
+
 				if not data:
-					print('No training data received')
-					return
+					if self.DEBUG_DATA_FILE.exists():
+						print('Using debug data')
+						data = json.loads(self.DEBUG_DATA_FILE.read_text())
+					else:
+						raise Exception('No training data received')
+
 				if not language:
-					print('Language not specified')
-					return
+					raise Exception('Language not specified')
+
 				self.train(language=language, trainingData=data)
 
 			except Exception as e:
-				print(f'Something went wrong with received training message: {e}')
+				print(f'Failed training NLU: {e}')
+				self.failedTraining(reason=str(e))
 
 
 	def failedTraining(self, reason: str):
 		self._mqttClient.publish(
-			topic=self.TOPIC_REFUSE_TRAINING,
+			topic=self.TOPIC_REFUSE_FAILED,
 			payload=reason
 		)
 
 
-	def train(self, language: str, trainingData: str):
+	def train(self, language: str, trainingData: Dict):
 		print('Received training request')
 
 		if self._training:
@@ -102,13 +114,12 @@ class NLUTrainer(object):
 				'language': language
 			}
 
-			trainingData = json.loads(trainingData)
 			dataset['entities'].update(trainingData['entities'])
 			dataset['intents'].update(trainingData['intents'])
 
 			self.DATASET_FILE.write_text(data=json.dumps(dataset, ensure_ascii=False, indent='\t'))
 			print('Generated dataset for training')
-			self._trainingThread = Thread(name='NLUTraining', target=self._trainingThread, daemon=True)
+			self._trainingThread = Thread(name='NLUTraining', target=self.trainingThread, daemon=True, kwargs={'language': language})
 			self._trainingThread.start()
 		except Exception as e:
 			reason = f'Something went wrong preparing NLU training: {e}'
@@ -117,35 +128,39 @@ class NLUTrainer(object):
 			self.failedTraining(reason=reason)
 
 
-	def trainingThread(self):
+	def trainingThread(self, language: str):
 		try:
+			startTime = time.time()
+
+			print(f'Download language support for {language}')
+			download: CompletedProcess = subprocess.run([f'snips-nlu', 'download', language], shell=True, check=True)
+			if download.returncode != 0 :
+				raise Exception(download.stderr.decode())
+
 			print('Begin training...')
-
-			tempTrainingData = Path('/snipsNLU')
-			if tempTrainingData.exists():
-				shutil.rmtree(tempTrainingData)
-
-			training: CompletedProcess = subprocess.run([f'./venv/bin/snips-nlu', 'train', str(self.DATASET_FILE), str(tempTrainingData)])
-			if training.returncode != 0 or not tempTrainingData.exists():
-				raise Exception(f'Error while training Snips NLU: {training.stderr.decode()}')
 
 			trainedNLU = Path('trainedNLU')
 			if trainedNLU.exists():
 				shutil.rmtree(trainedNLU, ignore_errors=True)
 
+			training: CompletedProcess = subprocess.run([f'snips-nlu', 'train', str(self.DATASET_FILE), str(trainedNLU)], shell=True, check=True)
+			if training.returncode != 0 or not trainedNLU.exists():
+				raise Exception(training.stderr.decode())
+
 			trainedNLU = Path('trainedNLU.zip')
-			trainedNLU.unlink(missing_ok=True)
+			if trainedNLU.exists():
+				trainedNLU.unlink()
 
 			shutil.make_archive('trainedNLU', 'zip', 'trainedNLU')
 
+			print(f'Sending results')
 			self._mqttClient.publish(
-				topic=self.TOPIC_TRAINING_RESULT,
-				payload={
-					'data': bytearray(trainedNLU.read_bytes()),
-					'controlHash': hashlib.blake2b(trainedNLU.read_bytes()).hexdigest()
-				},
+				topic=self.TOPIC_TRAINING_RESULT.format(hashlib.blake2b(trainedNLU.read_bytes()).hexdigest()),
+				payload=trainedNLU.read_bytes(),
 				qos=0
 			)
+			timer = round(time.time() - startTime, ndigits=2)
+			print(f'Training done! It took {timer} seconds to train.')
 		except Exception as e:
 			reason = f'Training failed: {e}'
 			print(reason)
@@ -155,6 +170,7 @@ class NLUTrainer(object):
 
 
 	def onConnect(self, _client, _userdata, _flags, _rc):
+		print('Mqtt connected, listening for training tasks...')
 		self._mqttClient.subscribe(self.TOPIC_TRAIN)
 		self._mqttClient.publish(topic=self.TOPIC_READY)
 
@@ -165,7 +181,7 @@ class NLUTrainer(object):
 			print(buf)
 
 
-if __name__ == '__main__':
+def start():
 	trainer = NLUTrainer()
 	trainer.connect()
 	try:
