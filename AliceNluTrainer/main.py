@@ -206,11 +206,11 @@ class NLUTrainer(object):
 @click.option('-p', '--port', default=1883, help='Mqtt server port')
 @click.option('-u', '--user', default='', help='Mqtt server username if required')
 @click.option('-s', '--password', default='', help='Mqtt server password if required')
-@click.option('-t', '--tlsfile', default='', help='Path to TLS certificate file, if required')
-def start(host: str, port: int, user: str = '', password: str = '', tlsfile: str = ''):
+@click.option('-t', '--tls_file', default='', help='Path to TLS certificate file, if required')
+def start(host: str, port: int = 1883, user: str = '', password: str = '', tls_file: str = ''): #NOSONAR
 	print('Starting Project Alice decentralized NLU trainer')
 
-	trainer = NLUTrainer(hostname=host, port=port, user=user, password=password, tlsFile=tlsfile)
+	trainer = NLUTrainer(hostname=host, port=port, user=user, password=password, tlsFile=tls_file)
 	try:
 		trainer.connect()
 		while True:
