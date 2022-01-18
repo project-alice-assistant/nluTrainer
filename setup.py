@@ -28,7 +28,7 @@ setup(
 	version='0.0.1',
 	long_description=Path('README.md').read_text(encoding='utf8'),
 	long_description_content_type='text/markdown',
-	python_requires='=~3.7',
+	python_requires='~=3.7',
 	packages=find_packages(),
 	include_package_data=True,
 	url='https://github.com/project-alice-assistant/nluTrainer',
