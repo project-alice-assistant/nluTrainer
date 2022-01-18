@@ -32,12 +32,16 @@ import paho.mqtt.client as mqtt
 
 class NLUTrainer(object):
 
-	TOPIC_READY = 'projectalice/nlu/trainerReady'
-	TOPIC_STOPPED = 'projectalice/nlu/trainerStopped'
+	TOPIC_READY             = 'projectalice/nlu/trainerReady'
+	TOPIC_STOPPED           = 'projectalice/nlu/trainerStopped'
+	TOPIC_TRAINING          = 'projectalice/nlu/training'
+	TOPIC_TRAINING_STATUS   = 'projectalice/nlu/trainingStatus'
 
-	TOPIC_TRAIN = 'projectalice/nlu/doTrain'
-	TOPIC_REFUSE_FAILED = 'projectalice/nlu/trainingFailed'
-	TOPIC_TRAINING_RESULT = 'projectalice/nlu/trainingResult/{}'
+	TOPIC_TRAIN             = 'projectalice/nlu/doTrain'
+	TOPIC_REFUSE_FAILED     = 'projectalice/nlu/trainingFailed'
+	TOPIC_TRAINING_RESULT   = 'projectalice/nlu/trainingResult/{}'
+
+	TOPIC_CORE_RECONNECTION = 'projectalice/devices/coreReconnection'
 
 	DATASET_FILE = Path('snipsNluDataset.json')
 	DEBUG_DATA_FILE = Path('debugDataset.json')
@@ -82,7 +86,11 @@ class NLUTrainer(object):
 
 
 	def onMqttMessage(self, _client, _userdata, message: mqtt.MQTTMessage):
-		if message.topic == self.TOPIC_TRAIN:
+		if message.topic == self.TOPIC_CORE_RECONNECTION:
+			self._mqttClient.publish(topic=self.TOPIC_READY)
+		elif message == self.TOPIC_TRAINING_STATUS:
+			self._mqttClient.publish(self.TOPIC_TRAINING_STATUS, payload=json.dumps({'status': 'training' if self._training else 'done'}))
+		elif message.topic == self.TOPIC_TRAIN:
 			try:
 				print('Received training task')
 
@@ -151,6 +159,8 @@ class NLUTrainer(object):
 	def trainingThread(self, language: str):
 		try:
 			startTime = time.time()
+
+			self._mqttClient.publish(topic=self.TOPIC_TRAINING)
 
 			print(f'Download language support for {language}')
 			download: CompletedProcess = subprocess.run([f'snips-nlu', 'download', language], shell=True, check=True)
