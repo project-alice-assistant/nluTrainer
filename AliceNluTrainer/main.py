@@ -26,6 +26,7 @@ from subprocess import CompletedProcess
 from threading import Thread
 from typing import Dict, Optional
 
+import click
 import paho.mqtt.client as mqtt
 
 
@@ -41,7 +42,10 @@ class NLUTrainer(object):
 	DATASET_FILE = Path('snipsNluDataset.json')
 	DEBUG_DATA_FILE = Path('debugDataset.json')
 
-	def __init__(self):
+	def __init__(self, hostname: str = 'localhost', port: int = 1883):
+		self._hostname = hostname
+		self._port = port
+
 		self._mqttClient = mqtt.Client()
 		self._training = False
 		self._trainingThread: Optional[Thread] = None
@@ -51,7 +55,7 @@ class NLUTrainer(object):
 
 
 	def connect(self):
-		self._mqttClient.connect(host='localhost')
+		self._mqttClient.connect(host=self._hostname, port=self._port)
 		self._mqttClient.loop_start()
 
 
@@ -181,13 +185,20 @@ class NLUTrainer(object):
 			print(buf)
 
 
-def start():
-	trainer = NLUTrainer()
-	trainer.connect()
+@click.command()
+@click.option('-h', '--host', default='localhost', help='Mqtt server hostname')
+@click.option('-p', '--port', default=1883, help='Mqtt server port')
+def start(host: str, port: int):
+	trainer = NLUTrainer(hostname=host, port=port)
 	try:
+		trainer.connect()
+
 		print('Starting Project Alice decentralized NLU trainer')
 		while True:
 			time.sleep(0.1)
 	except KeyboardInterrupt:
 		print('Stopping')
+	except Exception as e:
+		print(f'Error: {e}')
+	finally:
 		trainer.disconnect()
