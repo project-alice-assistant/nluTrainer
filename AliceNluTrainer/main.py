@@ -42,9 +42,12 @@ class NLUTrainer(object):
 	DATASET_FILE = Path('snipsNluDataset.json')
 	DEBUG_DATA_FILE = Path('debugDataset.json')
 
-	def __init__(self, hostname: str = 'localhost', port: int = 1883):
+	def __init__(self, hostname: str = 'localhost', port: int = 1883, user: str = '', password: str = '', tlsFile: str = ''):
 		self._hostname = hostname
 		self._port = port
+		self._user = user
+		self._password = password
+		self._tlsFile = Path(tlsFile)
 
 		self._mqttClient = mqtt.Client()
 		self._training = False
@@ -55,8 +58,21 @@ class NLUTrainer(object):
 
 
 	def connect(self):
-		self._mqttClient.connect(host=self._hostname, port=self._port)
-		self._mqttClient.loop_start()
+		try:
+			print(f'Connecting to {self._hostname}:{self._port}')
+
+			if self._user:
+				self._mqttClient.username_pw_set(username=self._user, password=self._password)
+
+			if self._tlsFile and self._tlsFile.exists():
+				self._mqttClient.tls_set(certfile=str(self._tlsFile))
+				self._mqttClient.tls_insecure_set(False)
+
+			self._mqttClient.connect(host=self._hostname, port=self._port)
+			self._mqttClient.loop_start()
+		except Exception as e:
+			print(f'Error connecting: {e}')
+			raise
 
 
 	def disconnect(self):
@@ -188,12 +204,15 @@ class NLUTrainer(object):
 @click.command()
 @click.option('-h', '--host', default='localhost', help='Mqtt server hostname')
 @click.option('-p', '--port', default=1883, help='Mqtt server port')
-def start(host: str, port: int):
-	trainer = NLUTrainer(hostname=host, port=port)
+@click.option('-u', '--user', default='', help='Mqtt server username if required')
+@click.option('-s', '--password', default='', help='Mqtt server password if required')
+@click.option('-t', '--tlsfile', default='', help='Path to TLS certificate file, if required')
+def start(host: str, port: int, user: str = '', password: str = '', tlsfile: str = ''):
+	print('Starting Project Alice decentralized NLU trainer')
+
+	trainer = NLUTrainer(hostname=host, port=port, user=user, password=password, tlsFile=tlsfile)
 	try:
 		trainer.connect()
-
-		print('Starting Project Alice decentralized NLU trainer')
 		while True:
 			time.sleep(0.1)
 	except KeyboardInterrupt:
