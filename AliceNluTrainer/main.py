@@ -47,7 +47,7 @@ class NLUTrainer(object):
 		self._port = port
 		self._user = user
 		self._password = password
-		self._tlsFile = Path(tlsFile)
+		self._tlsFile = tlsFile
 
 		self._mqttClient = mqtt.Client()
 		self._training = False
@@ -64,7 +64,7 @@ class NLUTrainer(object):
 			if self._user:
 				self._mqttClient.username_pw_set(username=self._user, password=self._password)
 
-			if self._tlsFile and self._tlsFile.exists():
+			if self._tlsFile and Path(self._tlsFile).exists():
 				self._mqttClient.tls_set(certfile=str(self._tlsFile))
 				self._mqttClient.tls_insecure_set(False)
 
