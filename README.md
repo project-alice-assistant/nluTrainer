@@ -25,7 +25,7 @@ That's all you need to install!
 
 
 # Usage 
-Run the trainer using this command, in your terminal:
+Run the trainer using this command, in your terminal, with admin rights as it needs to install the language packs:
 
 `alice-trainer --host ALICE_IP`
 

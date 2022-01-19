@@ -28,20 +28,21 @@ from typing import Dict, Optional
 
 import click
 import paho.mqtt.client as mqtt
+import pkg_resources
 
 
 class NLUTrainer(object):
 
 	TOPIC_READY             = 'projectalice/nlu/trainerReady'
 	TOPIC_STOPPED           = 'projectalice/nlu/trainerStopped'
+
 	TOPIC_TRAINING          = 'projectalice/nlu/training'
-	TOPIC_TRAINING_STATUS   = 'projectalice/nlu/trainingStatus'
+	TOPIC_REFUSE_FAILED     = 'projectalice/nlu/trainingFailed'
+	TOPIC_TRAINING_RESULT   = 'projectalice/nlu/trainingResult/{}/{}'
 
 	TOPIC_TRAIN             = 'projectalice/nlu/doTrain'
-	TOPIC_REFUSE_FAILED     = 'projectalice/nlu/trainingFailed'
-	TOPIC_TRAINING_RESULT   = 'projectalice/nlu/trainingResult/{}'
-
 	TOPIC_CORE_RECONNECTION = 'projectalice/devices/coreReconnection'
+	TOPIC_TRAINING_STATUS   = 'projectalice/nlu/trainingStatus'
 
 	DATASET_FILE = Path('snipsNluDataset.json')
 	DEBUG_DATA_FILE = Path('debugDataset.json')
@@ -88,6 +89,7 @@ class NLUTrainer(object):
 	def onMqttMessage(self, _client, _userdata, message: mqtt.MQTTMessage):
 		if message.topic == self.TOPIC_CORE_RECONNECTION:
 			self._mqttClient.publish(topic=self.TOPIC_READY)
+			print('Alice main unit just connected')
 		elif message == self.TOPIC_TRAINING_STATUS:
 			self._mqttClient.publish(self.TOPIC_TRAINING_STATUS, payload=json.dumps({'status': 'training' if self._training else 'done'}))
 		elif message.topic == self.TOPIC_TRAIN:
@@ -98,7 +100,7 @@ class NLUTrainer(object):
 					raise Exception('No payload in message')
 
 				payload = json.loads(message.payload.decode())
-				data = json.loads(payload.get('data', '{}'))
+				data = payload.get('data', dict())
 				language = payload.get('language', None)
 
 				if not data:
@@ -182,14 +184,14 @@ class NLUTrainer(object):
 				trainedNLU.unlink()
 
 			shutil.make_archive('trainedNLU', 'zip', 'trainedNLU')
+			timer = round(time.time() - startTime, ndigits=2)
 
 			print(f'Sending results')
 			self._mqttClient.publish(
-				topic=self.TOPIC_TRAINING_RESULT.format(hashlib.blake2b(trainedNLU.read_bytes()).hexdigest()),
+				topic=self.TOPIC_TRAINING_RESULT.format(timer, hashlib.blake2b(trainedNLU.read_bytes()).hexdigest()),
 				payload=trainedNLU.read_bytes(),
 				qos=0
 			)
-			timer = round(time.time() - startTime, ndigits=2)
 			print(f'Training done! It took {timer} seconds to train.')
 		except Exception as e:
 			reason = f'Training failed: {e}'
@@ -202,6 +204,8 @@ class NLUTrainer(object):
 	def onConnect(self, _client, _userdata, _flags, _rc):
 		print('Mqtt connected, listening for training tasks...')
 		self._mqttClient.subscribe(self.TOPIC_TRAIN)
+		self._mqttClient.subscribe(self.TOPIC_TRAINING_STATUS)
+		self._mqttClient.subscribe(self.TOPIC_CORE_RECONNECTION)
 		self._mqttClient.publish(topic=self.TOPIC_READY)
 
 
@@ -218,7 +222,8 @@ class NLUTrainer(object):
 @click.option('-s', '--password', default='', help='Mqtt server password if required')
 @click.option('-t', '--tls_file', default='', help='Path to TLS certificate file, if required')
 def start(host: str, port: int = 1883, user: str = '', password: str = '', tls_file: str = ''): #NOSONAR
-	print('Starting Project Alice decentralized NLU trainer')
+	version = pkg_resources.require('projectalice-nlu-trainer')[0].version
+	print(f'Starting Project Alice offshore NLU trainer v. {version}')
 
 	trainer = NLUTrainer(hostname=host, port=port, user=user, password=password, tlsFile=tls_file)
 	try:
