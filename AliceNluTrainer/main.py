@@ -40,7 +40,7 @@ class NLUTrainer(object):
 
 	TOPIC_TRAINING          = 'projectalice/nlu/training'
 	TOPIC_REFUSE_FAILED     = 'projectalice/nlu/trainingFailed'
-	TOPIC_TRAINING_RESULT   = 'projectalice/nlu/trainingResult/{}/{}'
+	TOPIC_TRAINING_RESULT   = 'projectalice/nlu/trainingResult/{}'
 
 	TOPIC_TRAIN             = 'projectalice/nlu/doTrain'
 	TOPIC_CORE_RECONNECTION = 'projectalice/devices/coreReconnection'
@@ -182,7 +182,7 @@ class NLUTrainer(object):
 			archive = Path(tempfile.TemporaryDirectory().name, 'archive')
 			data = Path(shutil.make_archive(str(archive), 'zip', str(trainedNLU))).read_bytes()
 			timer = round(time.time() - startTime, ndigits=2)
-			topic = self.TOPIC_TRAINING_RESULT.format(timer, hashlib.blake2b(archive.with_suffix('.zip').read_bytes()).hexdigest())
+			topic = self.TOPIC_TRAINING_RESULT.format(hashlib.blake2b(archive.with_suffix('.zip').read_bytes()).hexdigest())
 
 			print(f'Sending results')
 			self._mqttClient.publish(
