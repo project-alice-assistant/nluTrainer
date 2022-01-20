@@ -20,7 +20,9 @@ import hashlib
 import json
 import shutil
 import subprocess
+import tempfile
 import time
+import traceback
 from pathlib import Path
 from subprocess import CompletedProcess
 from threading import Thread
@@ -44,7 +46,7 @@ class NLUTrainer(object):
 	TOPIC_CORE_RECONNECTION = 'projectalice/devices/coreReconnection'
 	TOPIC_TRAINING_STATUS   = 'projectalice/nlu/trainingStatus'
 
-	DATASET_FILE = Path('snipsNluDataset.json')
+	DATASET_FILE = Path(tempfile.NamedTemporaryFile().name)
 	DEBUG_DATA_FILE = Path('debugDataset.json')
 
 	def __init__(self, hostname: str = 'localhost', port: int = 1883, user: str = '', password: str = '', tlsFile: str = ''):
@@ -121,6 +123,7 @@ class NLUTrainer(object):
 
 
 	def failedTraining(self, reason: str):
+		traceback.print_exc()
 		self._mqttClient.publish(
 			topic=self.TOPIC_REFUSE_FAILED,
 			payload=reason
@@ -128,7 +131,7 @@ class NLUTrainer(object):
 
 
 	def train(self, language: str, trainingData: Dict):
-		print('Received training request')
+		print('Preparing dataset')
 
 		if self._training:
 			reason = "Already training, can't train now"
@@ -165,31 +168,26 @@ class NLUTrainer(object):
 			self._mqttClient.publish(topic=self.TOPIC_TRAINING)
 
 			print(f'Download language support for {language}')
-			download: CompletedProcess = subprocess.run([f'snips-nlu', 'download', language], shell=True, check=True)
+			download: CompletedProcess = subprocess.run(f'snips-nlu download {language}', shell=True, check=True)
 			if download.returncode != 0 :
 				raise Exception(download.stderr.decode())
 
-			print('Begin training...')
+			print('Begin training')
 
-			trainedNLU = Path('trainedNLU')
-			if trainedNLU.exists():
-				shutil.rmtree(trainedNLU, ignore_errors=True)
-
-			training: CompletedProcess = subprocess.run([f'snips-nlu', 'train', str(self.DATASET_FILE), str(trainedNLU)], shell=True, check=True)
+			trainedNLU = Path(tempfile.TemporaryDirectory().name)
+			training: CompletedProcess = subprocess.run(f'snips-nlu train {str(self.DATASET_FILE)} {str(trainedNLU)}', shell=True, check=True)
 			if training.returncode != 0 or not trainedNLU.exists():
 				raise Exception(training.stderr.decode())
 
-			trainedNLU = Path('trainedNLU.zip')
-			if trainedNLU.exists():
-				trainedNLU.unlink()
-
-			shutil.make_archive('trainedNLU', 'zip', 'trainedNLU')
+			archive = Path(tempfile.TemporaryDirectory().name, 'archive')
+			data = Path(shutil.make_archive(str(archive), 'zip', str(trainedNLU))).read_bytes()
 			timer = round(time.time() - startTime, ndigits=2)
+			topic = self.TOPIC_TRAINING_RESULT.format(timer, hashlib.blake2b(archive.with_suffix('.zip').read_bytes()).hexdigest())
 
 			print(f'Sending results')
 			self._mqttClient.publish(
-				topic=self.TOPIC_TRAINING_RESULT.format(timer, hashlib.blake2b(trainedNLU.read_bytes()).hexdigest()),
-				payload=trainedNLU.read_bytes(),
+				topic=topic,
+				payload=data,
 				qos=0
 			)
 			print(f'Training done! It took {timer} seconds to train.')
