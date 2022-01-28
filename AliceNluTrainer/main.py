@@ -16,8 +16,10 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>
 #
 #  Last modified: 2022.01.17 at 14:36:59 CET
+import ctypes
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -56,12 +58,24 @@ class NLUTrainer(object):
 		self._password = password
 		self._tlsFile = tlsFile
 
+		if not self.isAdmin():
+			print('Please run this script with admin rights, as we need to write on the disk.')
+			exit(1)
+
 		self._mqttClient = mqtt.Client()
 		self._training = False
 		self._trainingThread: Optional[Thread] = None
 		self._mqttClient.on_message = self.onMqttMessage
 		self._mqttClient.on_log = self.onLog
 		self._mqttClient.on_connect = self.onConnect
+
+
+	@staticmethod
+	def isAdmin() -> bool:
+		try:
+			return os.getuid() == 0
+		except AttributeError:
+			return ctypes.windll.shell32.IsUserAnAdmin() != 0
 
 
 	def connect(self):
